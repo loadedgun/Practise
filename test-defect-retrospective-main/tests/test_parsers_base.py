@@ -103,6 +103,33 @@ class TestMatchFields:
         assert mapping['标题'] == 'title'
         assert 'summary' not in mapping
 
+    def test_two_headers_to_same_std_field_is_intercepted(self):
+        """回归用例：两个不同原始表头同时命中同一标准字段时，仅第一个被保留。
+
+        历史 bug：match_fields 内守卫误写为 `if std in mapping`（检查键），
+        导致两个不同表头可同时映射到同一标准字段，parse_file 中后写覆盖前值、
+        静默丢数据。修复为 `if std in mapping.values()` 后，第二个表头应被拦截。
+        """
+        class P(BaseParser):
+            name = 't2'
+            # bug_id 有两个候选表头：「ID」与「编号」
+            field_map = {
+                'bug_id': ['ID', '编号'],
+                'title': ['标题'],
+                'status': ['状态'],
+            }
+        mapping = P().match_fields(['ID', '编号', '标题', '状态'])
+
+        # 第一个命中的「ID」映射到 bug_id
+        assert mapping.get('id') == 'bug_id'
+        # 第二个命中同一标准字段的「编号」必须被拦截，不能出现在 mapping 中
+        assert '编号' not in mapping
+        # mapping 的 values（标准字段）必须两两不同
+        values = list(mapping.values())
+        assert len(values) == len(set(values)), (
+            '标准字段出现重复映射: %s' % values)
+        assert set(values) == {'bug_id', 'title', 'status'}
+
     def test_unmapped_headers_ignored(self):
         p = self._make_parser()
         mapping = p.match_fields(['ID', '标题', '状态', '完全无关列'])
